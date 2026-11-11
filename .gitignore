@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+bench/results/*.json
+!bench/results/machine.json
+bench/results/*.nsys-rep
+bench/results/*.sqlite
+bench/results/*.qdstrm
+bench/.build/
+.claude/settings.local.json

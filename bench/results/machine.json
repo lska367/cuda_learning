@@ -1,0 +1,53 @@
+{
+  "timestamp": "2026-11-11 21:03:37",
+  "device": {
+    "name": "Tesla V100-PCIE-32GB",
+    "sm": "sm_70",
+    "sm_count": 80,
+    "total_mem_gib": 31.7,
+    "l2_mib": 6.0
+  },
+  "env": {
+    "torch": "2.8.0+cu128",
+    "cuda": "12.8",
+    "python": "3.11.16",
+    "arch_list": [
+      "sm_70",
+      "sm_75",
+      "sm_80",
+      "sm_86",
+      "sm_90",
+      "sm_100",
+      "sm_120"
+    ],
+    "driver": "580.178.04"
+  },
+  "measured": {
+    "bw_gbps": 663.4,
+    "fp16_tflops": 21.55,
+    "fp32_tflops": 3.19,
+    "launch_us": 11.66
+  },
+  "peaks": {
+    "bw_gbps": 663.4,
+    "fp16_tflops": 21.55,
+    "fp32_tflops": 3.19,
+    "launch_us": 11.66
+  },
+  "extra": {
+    "fill_bw_gbps": 399.8,
+    "balance_fp16_flop_per_byte": 32.5,
+    "spec_bw_gbps": 900.0,
+    "spec_fp16_tflops": 113.0,
+    "bw_pct_of_spec": 73.7,
+    "fp16_pct_of_spec": 19.1
+  },
+  "clocks_during_calib": {
+    "sm_mhz_min": 135,
+    "sm_mhz_mean": 1244.627659574468,
+    "sm_mhz_max": 1380,
+    "power_w_mean": 72.54519148936171,
+    "power_w_max": 88.744,
+    "n_samples": 94
+  }
+}

@@ -1,0 +1,8 @@
+# 用 uv 安装（已有 .venv，python 3.11）
+# torch 2.8.0 → PyPI 默认 cu128 wheel，arch_list 包含 sm_70（V100 可用）
+# 注意：不要升到 cu130 / torch 2.9+ 的 CUDA 13 wheel，CUDA 13 已移除 Volta
+torch==2.8.0
+numpy>=1.26
+pandas>=2.2
+tabulate>=0.9
+nvidia-ml-py>=12.0
