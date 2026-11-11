@@ -24,6 +24,7 @@ make bench       # 跑全部 case
 | `01_inference_operators.md` | **算子全景**：13 类算子、Llama-3-8B 逐算子形状、融合算子名录、V100 能力边界、14 个手写练习 |
 | `bench/` | 算子 bench 环境（标定 + 计时 + roofline 判定 + 对拍） |
 | `bench/results/machine.json` | **本机实测峰值的唯一事实源**（所有 %BW / %TC 都除以它） |
+| `bench/kernels/csrc/` | 手写 CUDA kernel（练习 1–3）：silu_mul / rmsnorm v1+v2 / fused_add_rmsnorm |
 | `bench/results/baseline.csv` | 基线结果，用 `--csv` 追加 |
 
 ## 实测机器常数（不要用 spec 数字）
@@ -52,29 +53,34 @@ launch 开销    10.8 µs   (正常卡 2–4 µs)
 
 | case | impl | ms | GB/s | %BW | TFLOP/s | %TC | AI | bound | roofline% |
 |---|---|---|---|---|---|---|---|---|---|
-| attn/decode | torch | 0.620 | 108 | 16% | 0.43 | 2% | 4.0 | mem | 16% |
-| attn/prefill | torch | 9.897 | 27 | 4% | 3.47 | 16% | 128.0 | flop | 16% |
-| elt/cast | torch | 0.086 | 293 | 44% | – | – | 0.0 | mem | 44% |
+| attn/decode | torch | 0.632 | 106 | 16% | 0.42 | 2% | 4.0 | mem | 16% |
+| attn/prefill | torch | 9.970 | 27 | 4% | 3.45 | 16% | 128.0 | flop | 16% |
+| elt/cast | torch | 0.090 | 279 | 42% | – | – | 0.0 | mem | 42% |
 | elt/residual_add | torch | 0.044 | 572 | 86% | 0.10 | 0% | 0.2 | mem | 86% |
-| elt/silu_mul | torch | 0.602 | 146 | 22% | 0.15 | 1% | 1.0 | mem | 22% |
+| elt/silu_mul | torch | 0.600 | 147 | 22% | 0.15 | 1% | 1.0 | mem | 22% |
 | elt/silu_mul | **triton** | 0.150 | 585 | 88% | 0.59 | 3% | 1.0 | mem | 88% |
+| elt/silu_mul | **cuda** | 0.131 | 672 | 101% | 0.67 | 3% | 1.0 | mem | 101% |
 | gemm/down | torch | 0.413 | 285 | 43% | 0.28 | 1% | 1.0 | mem | 43% |
-| gemm/gate_up | torch | 0.790 | 297 | 45% | 0.30 | 1% | 1.0 | mem | 45% |
-| gemm/lm_head | torch | 3.562 | 295 | 44% | 0.29 | 1% | 1.0 | mem | 44% |
-| gemm/o_proj | torch | 0.120 | 280 | 42% | 0.28 | 1% | 1.0 | mem | 42% |
-| gemm/qkv | torch | 0.164 | 307 | 46% | 0.31 | 1% | 1.0 | mem | 46% |
-| norm/fused_add_rmsnorm | torch | 0.498 | 67 | 10% | 0.03 | 0% | 0.5 | mem | 10% |
-| norm/rmsnorm | torch | 0.468 | 36 | 5% | 0.04 | 0% | 1.0 | mem | 5% |
-| norm/rmsnorm | **triton** | 0.041 | 410 | 62% | 0.41 | 2% | 1.0 | mem | 62% |
-| rope/neox | torch | 0.278 | 76 | 11% | 0.06 | 0% | 0.8 | mem | 11% |
+| gemm/gate_up | torch | 0.776 | 303 | 46% | 0.30 | 1% | 1.0 | mem | 46% |
+| gemm/lm_head | torch | 3.548 | 296 | 45% | 0.30 | 1% | 1.0 | mem | 45% |
+| gemm/o_proj | torch | 0.121 | 278 | 42% | 0.28 | 1% | 1.0 | mem | 42% |
+| gemm/qkv | torch | 0.167 | 302 | 46% | 0.30 | 1% | 1.0 | mem | 46% |
+| norm/fused_add_rmsnorm | torch | 0.500 | 67 | 10% | 0.03 | 0% | 0.5 | mem | 10% |
+| norm/fused_add_rmsnorm | **cuda** | 0.066 | 512 | 77% | 0.26 | 1% | 0.5 | mem | 77% |
+| norm/rmsnorm | torch | 0.451 | 37 | 6% | 0.04 | 0% | 1.0 | mem | 6% |
+| norm/rmsnorm | **triton** | 0.042 | 400 | 60% | 0.40 | 2% | 1.0 | mem | 60% |
+| norm/rmsnorm | cuda_v1 | 0.046 | 364 | 55% | 0.36 | 2% | 1.0 | mem | 55% |
+| norm/rmsnorm | **cuda** | 0.037 | 455 | 69% | 0.46 | 2% | 1.0 | mem | 69% |
+| rope/neox | torch | 0.277 | 76 | 11% | 0.06 | 0% | 0.8 | mem | 11% |
 
 读数：
 1. `elt/residual_add` 86% → 三操作数 elementwise 已经接近上限，bench 本身可信。
-2. Triton 参考 kernel（`bench/kernels/`）silu_mul 打到 88% BW（torch 版只有 22%）：
-   理想流量口径是可达的，这就是"自己的 kernel 该瞄多少"的标尺。
+2. 同一个 silu_mul：torch 22% → triton 88% → 手写 CUDA **101%**（贴着峰值）。
+   这说明"理想流量口径"是可达的，也说明瓶颈从来不是算法而是访存写法。
 3. `gemm/*` 在 M=1 时 42–46% BW —— GEMV 在 V100 上的真实水平（cuBLAS 也不算好），
    练习 4 手写 GEMV 的目标就是超过它。
-4. `norm/rmsnorm` 的 torch 版只有 5%：5 个 kernel 全耗在 launch 和小张量往返上。
+4. `norm/rmsnorm` 的 torch 版只有 6%：5 个 kernel 全耗在 launch 和小张量往返上；
+   CUDA 版 69%（T=1024）/ 82%（T=4096），剩余差距见下一节。
 5. `attn/*` 离 roofline 很远（预填充 16%），最值得手写。
 6. 关注 `%TC` 一列全是 1–3%：decode 阶段所有大 GEMM 都是"算力几乎闲置、纯等权重"，
    这是量化/融合的全部动机。
@@ -88,6 +94,46 @@ M 扫描（`make sweep CASE='gemm/qkv'`）能直接看到 roofline 转折：
 | 64 | 0.531 | 97 | 15% | 6.06 | 28% | 62.4 | flop |
 | 512 | 1.819 | 33 | 5% | 14.17 | 66% | 423.7 | flop |
 | 1024 | 2.916 | 24 | 4% | 17.67 | **82%** | 722.8 | flop |
+
+## 练习 1–3（CUDA 版，已可跑）
+
+`bench/kernels/csrc/` 里是三个手写 kernel，通过 `torch.utils.cpp_extension` JIT 编译
+（`make build`，产物在 `bench/.build/`，增量重编约 5 s）：
+
+| 文件 | kernel | 关键手法 |
+|---|---|---|
+| `elementwise.cu` | `silu_and_mul` | 16 B 向量化（float4 = 8 half）、2D grid 避免整数除法、2 读 1 写 |
+| `norm.cu` | `rms_norm` v1 | 两遍读：读 → 归约 → 再读 → 写（**反面教材**，真实流量 1.5×） |
+| `norm.cu` | `rms_norm` v2 | 寄存器缓存单遍 + warp shuffle 归约 + `__ldcs` |
+| `norm.cu` | `fused_add_rms_norm` | 两输入两输出，顺手把 residual 写回，省一个 kernel |
+
+同一笔流量下四个实现的对比（T=1024, H=4096，Llama-3-8B 形状）：
+
+| kernel | torch 朴素 | triton | cuda v1 | cuda v2 |
+|---|---|---|---|---|
+| silu_mul | 22% BW | 88% | – | **101%** |
+| rmsnorm | 6% | 60% | 55% | **69%** |
+| fused_add_rmsnorm | 10% | – | – | **77%** |
+
+**尺寸决定天花板**（这点比 kernel 写法更重要）：
+
+| T | 流量 | 纯 copy | rmsnorm v2 | 说明 |
+|---|---|---|---|---|
+| 1024 | 16 MB | 77% | 69% | 16 MB 根本喂不饱 HBM，谁来都到不了 85% |
+| 4096 | 64 MB | 93% | 82% | 验收应该在这个量级看 |
+| 16384 | 256 MB | 96% | 74% | 大 T 下 `__stcs` 有效；剩余差距是 `__syncthreads` 气泡 |
+
+所以：**练习 1 达标（101%）**；练习 2/3 到 69%/77%（T=1024）、82%（T=4096, rmsnorm），
+离 85% 还差的是 barrier 气泡，不是向量化 —— 下一步是块内软件流水（把下一行的 load
+提到本行归约之前），注释里写了思路。
+
+```bash
+make build                                   # 只编译 CUDA 扩展
+python -m bench.run -c 'norm/*' --sweep T=1024,4096,16384
+```
+
+> 注：并行会话曾在 `bench/cuda/` 下写过一套同目标 kernel（silu_mul 64% / rmsnorm 47% BW，
+> 比这里慢 2–2.5 倍），已删除；如需对照可从 commit `6519926` 取回。
 
 ## bench 的口径
 
@@ -104,20 +150,19 @@ M 扫描（`make sweep CASE='gemm/qkv'`）能直接看到 roofline 转折：
 
 ## 加自己的 kernel（三步）
 
-```python
-# 1) bench/kernels/my_gemv.cu 或 .py 写好 kernel，签名固定用传入的缓冲区（不要让 kernel 内部 allocate）
+照着 `bench/kernels/csrc/elementwise.cu` 抄结构：
 
-# 2) 在对应的 case 里注册一个 variant
-@register("gemm/qkv")
-def qkv(cfg):
-    ...
-    return Case(name="gemm/qkv",
-                variants={"torch": torch_impl, "mine": lambda: my_gemv(a, w, out)},
-                launches_by_impl={"torch": 1, "mine": 1}, ...)
-
-# 3) 跑
-python -m bench.run -c 'gemm/qkv' --sweep T=1,8,64
+```cuda
+// 1) bench/kernels/csrc/my_gemv.cu：只写 kernel + launch 函数，入参全是裸指针
+void my_gemv_launch(const void* x, const void* w, void* out, int M, int N, int K, cudaStream_t s);
+// 2) 在 ops.h 声明，在 bindings.cpp 里加一个 pybind 入口（含 fp16/contiguous 检查）
+// 3) 在 bench/kernels/cuda_ops.py 加一层薄 wrapper
+// 4) 在 case 里注册，bench 会自动对拍 + 算 %BW
+variants["mine"] = lambda: cuda_ops.my_gemv(a, w, out)
 ```
+
+要点：**bench 反复调用同一个 fn，所以 fn 必须幂等**（不要 `x += y` 这类累积写，
+会被累加几十次，正确性对拍会炸）；kernel 内部不要 allocate，缓冲区由 case 传进来。
 
 新增 case 只需要在 `bench/cases/<family>.py` 里加一个 `@register("family/name")` 函数，
 约定：**bench 反复调用同一个 fn，所以 fn 必须幂等**（不要 `x += y` 这类累积写，
@@ -138,8 +183,8 @@ python -m bench.run -c 'gemm/qkv' --sweep T=1,8,64
 
 - [x] 算子全景整理（`01_inference_operators.md`）
 - [x] bench 环境：标定 + 计时 + roofline + 对拍 + 基线
-- [x] 参考 kernel：`silu_mul`（98% BW）、`rmsnorm`（67% BW）
-- [ ] 练习 1–3：把 rmsnorm / fused_add_rmsnorm 打到 ≥85% BW
+- [x] 练习 1–3：CUDA 版 silu_mul（101% BW）、rmsnorm v1/v2（69%）、fused_add_rmsnorm（77%）
+- [ ] 练习 2/3 收尾：软件流水吃掉 barrier 气泡（82% → 90%），T 扫描 + CUDA Graph 对比
 - [ ] 练习 4–7：GEMV / GEMM tiling / Tensor Core / epilogue
 - [ ] 练习 8–11：RoPE / online softmax / flash attention / paged decode
 - [ ] 练习 12–14：sampling / 量化 / MoE

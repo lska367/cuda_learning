@@ -1,19 +1,4 @@
 case,impl,ms,p20,p80,gbps,pct_bw,tflops,pct_flop,ai,bound,roofline_pct,launch_pct,err,note
-attn/decode,torch,0.6195,0.5816,0.6205,108.5,16.4,0.43,2.0,3.99,mem,16.4,7.0,ok,非 paged 基线；KV 流量随 S 线性增长，S=128k 时超过权重流
-attn/prefill,torch,9.897,9.8744,9.899,27.1,4.1,3.47,16.1,128.0,flop,16.1,0.2,ok,causal FMHA；FLOPs 按 S²/2 记（online softmax 不物化 S×S）
-elt/cast,torch,0.086,0.085,0.087,292.6,44.1,0.0,0.0,0.0,mem,44.1,12.5,ok,fp16→fp32 转换；一次多余 cast = 双倍流量
-elt/residual_add,torch,0.044,0.043,0.0451,571.5,86.2,0.1,0.4,0.17,mem,86.2,24.5,,2 读 1 写；融合进 RMSNorm 可消掉整个 kernel
-elt/silu_mul,torch,0.6021,0.5847,0.6042,146.3,22.1,0.15,0.7,1.0,mem,22.1,3.6,ok,SwiGLU；torch 版 2 kernel，triton 版一次读一次写
-elt/silu_mul,triton,0.1505,0.1485,0.1526,585.1,88.2,0.59,2.7,1.0,mem,88.2,7.2,ok,SwiGLU；torch 版 2 kernel，triton 版一次读一次写
-gemm/down,torch,0.4127,0.4096,0.4147,284.7,42.9,0.28,1.3,1.0,mem,42.9,2.6,ok,FFN 第二层
-gemm/gate_up,torch,0.7905,0.7875,0.7946,297.2,44.8,0.3,1.4,1.0,mem,44.8,1.4,ok,FFN 第一层（每层最大的权重）
-gemm/lm_head,torch,3.5625,3.5441,3.5697,295.0,44.5,0.29,1.4,1.0,mem,44.5,0.3,ok,logits：decode 时第二大的权重流
-gemm/o_proj,torch,0.1198,0.1126,0.1209,280.2,42.3,0.28,1.3,1.0,mem,42.3,9.0,ok,attention 输出投影
-gemm/qkv,torch,0.1638,0.1597,0.1659,307.3,46.3,0.31,1.4,1.0,mem,46.3,6.6,ok,fused QKV proj（3 个投影拼一起）
-norm/fused_add_rmsnorm,torch,0.4977,0.4925,0.4997,67.4,10.2,0.03,0.2,0.5,mem,10.2,13.0,ok,每层两侧各一次；融合后 1 个 kernel 干掉 6 个
-norm/rmsnorm,torch,0.468,0.4649,0.469,35.9,5.4,0.04,0.2,1.0,mem,5.4,11.5,ok,Llama 主线归一化；torch 版是 5 kernel 朴素实现
-norm/rmsnorm,triton,0.041,0.041,0.042,409.8,61.8,0.41,1.9,1.0,mem,61.8,26.3,ok,Llama 主线归一化；torch 版是 5 kernel 朴素实现
-rope/neox,torch,0.2775,0.2765,0.2785,75.6,11.4,0.06,0.3,0.75,mem,11.4,31.1,ok,half-split 布局；纯带宽活，目标是融合成 1 个 kernel 并把 KV 直接写进 cache
 attn/decode,torch,0.6318,0.6298,0.642,106.4,16.0,0.42,2.0,3.99,mem,16.0,7.4,ok,非 paged 基线；KV 流量随 S 线性增长，S=128k 时超过权重流
 attn/prefill,torch,9.9697,9.943,9.9871,26.9,4.1,3.45,16.0,128.0,flop,16.0,0.2,ok,causal FMHA；FLOPs 按 S²/2 记（online softmax 不物化 S×S）
 elt/cast,torch,0.0901,0.085,0.0911,279.3,42.1,0.0,0.0,0.0,mem,42.1,12.9,ok,fp16→fp32 转换；一次多余 cast = 双倍流量
@@ -33,3 +18,22 @@ norm/rmsnorm,triton,0.042,0.041,0.043,399.8,60.3,0.4,1.9,1.0,mem,60.3,27.8,ok,v1
 norm/rmsnorm,cuda_v1,0.0461,0.0451,0.0471,364.3,54.9,0.36,1.7,1.0,mem,54.9,25.3,ok,v1 账面 3x 流量、v2 账面 2x；%BW 按理想 2x 记，v1 的超额读不可见
 norm/rmsnorm,cuda,0.0369,0.0369,0.0379,455.3,68.6,0.46,2.1,1.0,mem,68.6,31.6,ok,v1 账面 3x 流量、v2 账面 2x；%BW 按理想 2x 记，v1 的超额读不可见
 rope/neox,torch,0.2765,0.2755,0.2785,75.9,11.4,0.06,0.3,0.75,mem,11.4,33.7,ok,half-split 布局；纯带宽活，目标是融合成 1 个 kernel 并把 KV 直接写进 cache
+attn/decode,torch,0.5745,0.5745,0.5755,117.0,17.6,0.47,2.2,3.99,mem,17.6,8.1,ok,非 paged 基线；KV 流量随 S 线性增长，S=128k 时超过权重流
+attn/prefill,torch,9.986,9.9564,10.0321,26.9,4.1,3.44,16.0,128.0,flop,16.0,0.2,ok,causal FMHA；FLOPs 按 S²/2 记（online softmax 不物化 S×S）
+elt/cast,torch,0.0891,0.085,0.0911,282.5,42.6,0.0,0.0,0.0,mem,42.6,13.1,ok,fp16→fp32 转换；一次多余 cast = 双倍流量
+elt/residual_add,torch,0.044,0.043,0.0451,571.5,86.2,0.1,0.4,0.17,mem,86.2,26.5,,2 读 1 写；融合进 RMSNorm 可消掉整个 kernel
+elt/silu_mul,torch,0.597,0.5847,0.6042,147.5,22.2,0.15,0.7,1.0,mem,22.2,3.9,ok,SwiGLU；torch 版 2 kernel，手写版一次读一次写
+elt/silu_mul,triton,0.1505,0.1485,0.1536,585.3,88.2,0.59,2.7,1.0,mem,88.2,7.7,ok,SwiGLU；torch 版 2 kernel，手写版一次读一次写
+elt/silu_mul,cuda,0.1321,0.129,0.1413,666.8,100.5,0.67,3.1,1.0,mem,100.5,8.8,ok,SwiGLU；torch 版 2 kernel，手写版一次读一次写
+gemm/down,torch,0.4127,0.4086,0.4157,284.7,42.9,0.28,1.3,1.0,mem,42.9,2.8,ok,FFN 第二层
+gemm/gate_up,torch,0.8039,0.8018,0.8069,292.3,44.1,0.29,1.4,1.0,mem,44.1,1.5,ok,FFN 第一层（每层最大的权重）
+gemm/lm_head,torch,3.5543,3.5277,3.5676,295.7,44.6,0.3,1.4,1.0,mem,44.6,0.3,ok,logits：decode 时第二大的权重流
+gemm/o_proj,torch,0.1219,0.1137,0.1239,275.5,41.5,0.28,1.3,1.0,mem,41.5,9.6,ok,attention 输出投影
+gemm/qkv,torch,0.1628,0.1597,0.1649,309.3,46.6,0.31,1.4,1.0,mem,46.6,7.2,ok,fused QKV proj（3 个投影拼一起）
+norm/fused_add_rmsnorm,torch,0.4987,0.4895,0.5007,67.3,10.1,0.03,0.2,0.5,mem,10.1,14.0,ok,每层两侧各一次；融合后 1 个 kernel 干掉 6 个
+norm/fused_add_rmsnorm,cuda,0.0655,0.0645,0.0696,512.1,77.2,0.26,1.2,0.5,mem,77.2,17.8,ok,每层两侧各一次；融合后 1 个 kernel 干掉 6 个
+norm/rmsnorm,torch,0.4495,0.4475,0.4506,37.3,5.6,0.04,0.2,1.0,mem,5.6,13.0,ok,v1 账面 3x 流量、v2 账面 2x；%BW 按理想 2x 记，v1 的超额读不可见
+norm/rmsnorm,triton,0.042,0.041,0.042,399.8,60.3,0.4,1.9,1.0,mem,60.3,27.8,ok,v1 账面 3x 流量、v2 账面 2x；%BW 按理想 2x 记，v1 的超额读不可见
+norm/rmsnorm,cuda_v1,0.0461,0.0451,0.0471,364.3,54.9,0.36,1.7,1.0,mem,54.9,25.3,ok,v1 账面 3x 流量、v2 账面 2x；%BW 按理想 2x 记，v1 的超额读不可见
+norm/rmsnorm,cuda,0.0369,0.0369,0.0369,455.3,68.6,0.46,2.1,1.0,mem,68.6,31.6,ok,v1 账面 3x 流量、v2 账面 2x；%BW 按理想 2x 记，v1 的超额读不可见
+rope/neox,torch,0.2775,0.2765,0.2785,75.6,11.4,0.06,0.3,0.75,mem,11.4,33.6,ok,half-split 布局；纯带宽活，目标是融合成 1 个 kernel 并把 KV 直接写进 cache
